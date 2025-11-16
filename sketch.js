@@ -137,11 +137,13 @@ function centerSpotifyButton() {
   if (!btn) return;
 
   const x = window.innerWidth / 2 - btn.offsetWidth / 2;
-  const y = window.innerHeight / 1.4; // Slightly below upload button
-  btn.style.position = "absolute";
+  const y = window.innerHeight / 1.4;
   btn.style.left = `${x}px`;
   btn.style.top = `${y}px`;
+  btn.style.position = 'absolute';
+  btn.style.zIndex = 1; // clickable above canvas
 }
+
 
 function toggleBanner() {
   const banner = document.querySelector(".banner");
@@ -173,7 +175,8 @@ function setup() {
   let cnv = createCanvas(windowWidth, windowHeight);
   cnv.position(0, 0);
   cnv.style('z-index', '-1');        // Canvas behind HTML
-  cnv.style('position', 'absolute'); // Ensure it sits on the page properly
+  cnv.style('position', 'absolute');
+
   fft = new p5.FFT();
   amplitude = new p5.Amplitude();
 
@@ -184,13 +187,14 @@ function setup() {
     circles.push(new Circle(x, y, r));
   }
 
+  // ===== Create p5 buttons =====
   pauseplay = createButton('▶︎');
   pauseplay.mousePressed(togglePlay);
   pauseplay.addClass('pauseplay');
 
-    turnoff = createButton('TURN OFF BANNER');
-    turnoff.addClass('turnoff');
-    turnoff.mousePressed(toggleBanner);
+  turnoff = createButton('TURN OFF BANNER');
+  turnoff.addClass('turnoff');
+  turnoff.mousePressed(toggleBanner);
 
   newsong = createButton('UPLOAD NEW SONG');
   newsong.mouseClicked(() => {
@@ -202,7 +206,6 @@ function setup() {
     albumArtURL = null;
     albumImg = null;
     palette = [];
-
     showUI("home");
   });
   newsong.addClass('newsong');
@@ -215,17 +218,30 @@ function setup() {
   input.elt.accept = 'audio/*';
   input.hide();
 
+  loginBtn = select('#login');
+  loginBtn.style('z-index', 1);  // Ensure clickable above canvas
+  loginBtn.style('position', 'absolute');
+
+  // Attach p5 buttons to top-controls
+  const controlWrapper = select('.top-controls');
+  controlWrapper.child(turnoff);
+  controlWrapper.child(newsong);
+  controlWrapper.child(pauseplay);
+  controlWrapper.child(upload);
+
+  // Center buttons
+  centerUploadButton();
+  centerSpotifyButton();
+
   if (localStorage.getItem('use_spotify') === 'true' && spotifyToken) {
     localStorage.removeItem('use_spotify');
     mode = "spotify";
     fetchAlbumArt();
   }
-  loginBtn = select('#login');
 
-  setTimeout(() => {
-  centerUploadButton();
-  centerSpotifyButton(); // center Spotify after DOM is ready
-}, 0);
+  setInterval(fetchAlbumArt, 5000);
+}
+
 
 const controlWrapper = select('.top-controls');
 controlWrapper.child(turnoff);
@@ -331,3 +347,4 @@ function windowResized() {
   centerUploadButton();
   centerSpotifyButton();
 }
+
