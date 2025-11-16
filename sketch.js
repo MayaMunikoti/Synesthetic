@@ -170,7 +170,10 @@ function preload() {
 }
 
 function setup() {
-  createCanvas(windowWidth, windowHeight);
+  let cnv = createCanvas(windowWidth, windowHeight);
+  cnv.position(0, 0);
+  cnv.style('z-index', '-1');        // Canvas behind HTML
+  cnv.style('position', 'absolute'); // Ensure it sits on the page properly
   fft = new p5.FFT();
   amplitude = new p5.Amplitude();
 
