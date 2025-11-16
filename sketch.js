@@ -272,7 +272,7 @@ function draw() {
     ellipse(c.x, c.y, c.radius * 2);
   }
 
-  filter(BLUR, 100);
+ // filter(BLUR, 100);
 
   if (mode === "home") {
     textFont(font);
