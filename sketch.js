@@ -157,12 +157,28 @@ function toggleBanner() {
 
 function showUI(modeToSet) {
   if (modeToSet === "home") {
-    upload.show(); pauseplay.hide(); newsong.hide(); loginBtn.show(); turnoff.hide(); document.querySelector(".banner").style.display = "none";
-  } else if(modeToSet === "upload"){
-    upload.hide(); pauseplay.show(); newsong.show(); loginBtn.hide(); turnoff.hide(); document.querySelector(".banner").style.display = "none";
-  }
-  else if (modeToSet === "spotify"){
-    upload.hide(); pauseplay.hide(); newsong.show(); loginBtn.hide(); turnoff.show(); document.querySelector(".banner").style.display = "flex";
+    upload.show();
+    pauseplay.hide();
+    newsong.hide();
+    turnoff.hide();
+    loginBtn.show();
+    document.querySelector(".banner").style.display = "none";
+  } 
+  else if (modeToSet === "upload") {
+    upload.hide();
+    pauseplay.show();
+    newsong.show();
+    turnoff.hide();
+    loginBtn.hide();
+    document.querySelector(".banner").style.display = "none";
+  } 
+  else if (modeToSet === "spotify") {
+    upload.hide();
+    pauseplay.hide();
+    newsong.show();
+    turnoff.show();
+    loginBtn.hide();
+    document.querySelector(".banner").style.display = "flex";
   }
 }
 
@@ -172,38 +188,77 @@ function preload() {
 }
 
 function setup() {
+  // Canvas
   let cnv = createCanvas(windowWidth, windowHeight);
-  cnv.position(0,0);
-  cnv.style('z-index','-1');
-  cnv.style('position','absolute');
+  cnv.position(0, 0);
+  cnv.style('z-index', '-1'); // behind everything
+  cnv.style('position', 'absolute');
 
-  // Attach all p5 buttons after DOM exists
+  fft = new p5.FFT();
+  amplitude = new p5.Amplitude();
+
+  // Circles
+  for (let i = 0; i < numCircles; i++) {
+    let x = random(width);
+    let y = random(height);
+    let r = random(100, 250);
+    circles.push(new Circle(x, y, r));
+  }
+
+  // ====== P5 Buttons ======
   pauseplay = createButton('▶︎').addClass('pauseplay');
-  turnoff = createButton('TURN OFF BANNER').addClass('turnoff');
-  newsong = createButton('UPLOAD NEW SONG').addClass('newsong');
-  upload = createButton('+').addClass('upload');
+  pauseplay.mousePressed(togglePlay);
 
+  turnoff = createButton('TURN OFF BANNER').addClass('turnoff');
+  turnoff.mousePressed(toggleBanner);
+
+  newsong = createButton('UPLOAD NEW SONG').addClass('newsong');
+  newsong.mouseClicked(() => {
+    if (song) song.stop();
+    mode = "home";
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('use_spotify');
+    spotifyToken = null;
+    albumArtURL = null;
+    albumImg = null;
+    palette = [];
+
+    showUI("home");
+  });
+
+  upload = createButton('+').addClass('upload');
+  upload.mouseClicked(() => input.elt.click());
+
+  // File input for uploads
+  input = createFileInput(handleSong);
+  input.elt.accept = 'audio/*';
+  input.hide();
+
+  // ====== Attach buttons to top-controls ======
   const controlWrapper = select('.top-controls');
   controlWrapper.child(turnoff);
   controlWrapper.child(newsong);
   controlWrapper.child(pauseplay);
-  controlWrapper.child(upload);
 
-  loginBtn = select('#login');
-  loginBtn.style('z-index',1);
-  loginBtn.style('position','absolute');
-
+  // ====== Center upload button in middle of screen ======
   centerUploadButton();
+
+  // ====== Spotify button ======
+  loginBtn = select('#login');
+  loginBtn.style('position', 'absolute');
   centerSpotifyButton();
 
-  // Decide mode based on token
+  // Fetch Spotify if already logged in
   if (localStorage.getItem('use_spotify') === 'true' && spotifyToken) {
+    localStorage.removeItem('use_spotify');
     mode = "spotify";
     fetchAlbumArt();
-  } else {
-    mode = "home";
   }
 
+  // Fetch album art periodically
+  setInterval(fetchAlbumArt, 5000);
+
+  // Show initial UI
   showUI(mode);
 }
 
