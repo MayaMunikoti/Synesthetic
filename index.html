@@ -105,12 +105,16 @@
         console.log("Access Token:", response.access_token);
       }
 
-      if (code) {
-        getToken(code).then(() => {
-          localStorage.setItem('use_spotify', 'true');
-          window.location.href = redirectUri; // reload without code param
-        });
-      }
+     if (code) {
+      getToken(code).then(() => {
+        localStorage.setItem('use_spotify', 'true');
+        spotifyToken = localStorage.getItem('access_token'); // update global token
+        mode = "spotify";                                  // switch to Spotify view
+        fetchAlbumArt();                                   // populate album art & UI
+        history.replaceState(null, null, redirectUri);    // remove ?code= from URL without reload
+      });
+    }
+
     </script>
 
     <!-- Your sketch -->
