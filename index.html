@@ -8,17 +8,27 @@
 
     <link rel="stylesheet" type="text/css" href="style.css">
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.7.0/p5.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.7.0/addons/p5.sound.min.js"></script>
-
+    <!-- p5.js libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.7.0/p5.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.7.0/addons/p5.sound.min.js"></script>
   </head>
 
   <body>
-     <div id="top-right-controls" class="top-controls"></div>
-  <div class="banner">
-    <div class="scrolling-track" id="scrolling-track"></div>
-  </div>
-    <button id = "login"><img src="./Spotify_Primary_Logo_RGB_White.png" class="btn-icon">CONNECT TO SPOTIFY</button> 
+    <!-- Top controls div for p5 buttons -->
+    <div id="top-right-controls" class="top-controls"></div>
+
+    <!-- Banner -->
+    <div class="banner">
+      <div class="scrolling-track" id="scrolling-track"></div>
+    </div>
+
+    <!-- Spotify button -->
+    <button id="login">
+      <img src="./Spotify_Primary_Logo_RGB_White.png" class="btn-icon">
+      CONNECT TO SPOTIFY
+    </button> 
+
+    <!-- Spotify auth script -->
     <script>
       const clientId = '836ade30328e4480b154fb66700d6f00';
       const redirectUri = 'https://mayamunikoti.github.io/Synesthetic/';
@@ -64,7 +74,8 @@
         window.location.href = authUrl.toString();
       }
 
-      document.getElementById('login').onclick = loginWithSpotify;
+      const loginBtn = document.getElementById('login');
+      loginBtn.onclick = loginWithSpotify;
 
       const urlParams = new URLSearchParams(window.location.search);
       const code = urlParams.get('code');
@@ -92,18 +103,18 @@
 
         localStorage.setItem('access_token', response.access_token);
         console.log("Access Token:", response.access_token);
-
-
       }
 
       if (code) {
         getToken(code).then(() => {
-        localStorage.setItem('use_spotify', 'true');
-        window.location.href = redirectUri; // reload without code param
-      });
+          localStorage.setItem('use_spotify', 'true');
+          window.location.href = redirectUri; // reload without code param
+        });
       }
-
     </script>
+
+    <!-- Your sketch -->
     <script src="./sketch.js"></script>
   </body>
 </html>
+
