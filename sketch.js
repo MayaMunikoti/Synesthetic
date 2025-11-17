@@ -2,20 +2,20 @@
 let song, amplitude, fft;
 let bassSize = 100, targetBassSize = 100;
 let numCircles = 200, circles = [];
-let pauseplay, newsong, upload, input, turnoff, loginBtn;
+let pauseplay, newsong, upload, input, turnoff;
 let font;
 
 // ====== MODES ======
 let mode = "home"; // 'home', 'upload', 'spotify'
 
 // ====== SPOTIFY STATE ======
-let spotifyToken = localStorage.getItem('access_token') || null;
+let spotifyToken = localStorage.getItem('access_token');
 let albumArtURL = null;
-let albumImg = null;
+let albumImg;
 let palette = [];
 let bannerVisible = true;
 
-// ====== CIRCLE CLASS ======
+// ====== CLASSES ======
 class Circle {
   constructor(x, y, r) {
     this.x = x;
@@ -23,14 +23,17 @@ class Circle {
     this.radius = r;
     this.color = color(random(255), random(255), random(255));
     this.targetColor = this.color;
+    this.lerpAmount = 0;
   }
 
   updateColor() {
     this.color = lerpColor(this.color, this.targetColor, 0.3);
+    this.lerpAmount += 0.05;
+    if (this.lerpAmount >= 1) this.lerpAmount = 0;
   }
 
   setColorBasedOnAmplitude(amp, pitch) {
-    const schemes = {
+    let schemes = {
       Bass: [color(255, 220, random(255)), color(255, random(255), 220)],
       Mid: [color(random(255), 255, 220), color(220, 255, random(255))],
       Treble: [color(220, random(255), 255), color(random(255), 220, 255)]
@@ -39,66 +42,14 @@ class Circle {
   }
 }
 
-// ====== SAFE UI MODE SWITCH ======
-function setMode(newMode) {
-  if (mode === newMode) return;
-  mode = newMode;
-  showUI(mode);
-}
-
-// ====== AUDIO & SPOTIFY HELPERS ======
+// ====== FILE & SPOTIFY ======
 function handleSong(file) {
   if (file.type === 'audio') {
     song = loadSound(file.data, () => {
+      mode = "upload";
       amplitude.setInput(song);
-      song.play();
-      setMode("upload");
+      song.onended(play);
     });
-  }
-}
-
-// Exchange code -> token (PKCE) AFTER sketch.js has loaded
-async function exchangeCodeForToken(code) {
-  try {
-    const codeVerifier = localStorage.getItem('code_verifier');
-    if (!codeVerifier) {
-      console.warn("No code_verifier found in localStorage.");
-      return;
-    }
-
-    const payload = new URLSearchParams({
-      client_id: '836ade30328e4480b154fb66700d6f00',
-      grant_type: 'authorization_code',
-      code: code,
-      redirect_uri: 'https://mayamunikoti.github.io/Synesthetic/',
-      code_verifier: codeVerifier
-    });
-
-    const res = await fetch('https://accounts.spotify.com/api/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: payload
-    });
-
-    if (!res.ok) {
-      const txt = await res.text();
-      console.warn("Spotify token exchange failed:", res.status, txt);
-      return;
-    }
-
-    const data = await res.json();
-    if (data?.access_token) {
-      localStorage.setItem('access_token', data.access_token);
-      spotifyToken = data.access_token;
-      localStorage.setItem('use_spotify', 'true');
-      fetchAlbumArt();
-      setMode("spotify");
-      history.replaceState(null, null, window.location.origin + window.location.pathname);
-    } else {
-      console.warn("No access_token received:", data);
-    }
-  } catch (err) {
-    console.error("exchangeCodeForToken error:", err);
   }
 }
 
@@ -111,15 +62,19 @@ async function fetchAlbumArt() {
     if (!res.ok) return;
 
     const data = await res.json();
-    albumArtURL = data?.item?.album?.images?.[0]?.url || null;
+    albumArtURL = data?.item?.album?.images?.[0]?.url;
+
     if (albumArtURL) {
+      mode = "spotify";
       loadImage(albumArtURL, img => {
         albumImg = img;
         palette = extractColors(img);
       });
     }
     if (data?.item?.name && data?.item?.artists?.[0]?.name) {
-      updateNowPlaying(`${data.item.name} - ${data.item.artists[0].name}`);
+      const name = data.item.name;
+      const artist = data.item.artists[0].name;
+      updateNowPlaying(`${name} - ${artist}`);
     }
   } catch (err) {
     console.error("Spotify fetch error:", err);
@@ -127,36 +82,44 @@ async function fetchAlbumArt() {
 }
 
 function updateNowPlaying(text) {
+  if (mode !== "spotify") return; // only run for Spotify
+
+  const baseText = `NOW PLAYING: ${text}`;
   const track = document.getElementById("scrolling-track");
-  if (!track) return;
+
   track.innerHTML = '';
+
   const temp = document.createElement('div');
   temp.className = 'scrolling-text';
-  temp.innerText = `NOW PLAYING: ${text}`;
+  temp.innerText = baseText;
   track.appendChild(temp);
 
   requestAnimationFrame(() => {
     const bannerWidth = document.querySelector('.banner').offsetWidth;
     const textWidth = temp.offsetWidth;
+
     let totalWidth = textWidth;
     while (totalWidth < bannerWidth * 4) {
       const clone = temp.cloneNode(true);
       track.appendChild(clone);
       totalWidth += textWidth + 50;
     }
+
     track.style.animation = 'none';
     void track.offsetWidth;
     track.style.animation = 'scroll-left 50s linear infinite';
   });
 }
 
+
+
 function extractColors(img) {
   img.loadPixels();
-  const colors = [];
+  let colors = [];
   for (let i = 0; i < 500; i++) {
-    const x = floor(random(img.width));
-    const y = floor(random(img.height));
-    const idx = 4 * (y * img.width + x);
+    let x = floor(random(img.width));
+    let y = floor(random(img.height));
+    let idx = 4 * (y * img.width + x);
     colors.push(color(img.pixels[idx], img.pixels[idx+1], img.pixels[idx+2]));
   }
   return colors;
@@ -164,167 +127,148 @@ function extractColors(img) {
 
 // ====== UI HELPERS ======
 function centerUploadButton() {
-  if (!upload) return;
-  const w = upload.elt.offsetWidth;
-  const h = upload.elt.offsetHeight;
-  upload.position(width / 2 - w / 2, height / 2 - h / 2);
-  upload.style('z-index', '10');
+  const x = width / 2 - upload.size().width / 2;
+  const y = height / 2 - upload.size().height / 2;
+  upload.position(x, y);
 }
 
 function centerSpotifyButton() {
-  if (!loginBtn) return;
-  loginBtn.elt.style.position = 'absolute';
-  const w = loginBtn.elt.offsetWidth;
-  const h = loginBtn.elt.offsetHeight;
-  loginBtn.elt.style.left = `${window.innerWidth / 2 - w / 2}px`;
-  loginBtn.elt.style.top = `${window.innerHeight / 1.4 - h / 2}px`;
-  loginBtn.elt.style.zIndex = 20;
+  const btn = document.getElementById("login");
+  if (!btn) return;
+
+  const x = window.innerWidth / 2 - btn.offsetWidth / 2;
+  const y = window.innerHeight / 1.4; // Slightly below upload button
+  btn.style.position = "absolute";
+  btn.style.left = `${x}px`;
+  btn.style.top = `${y}px`;
 }
 
 function toggleBanner() {
   const banner = document.querySelector(".banner");
-  if (!banner) return;
   bannerVisible = !bannerVisible;
   banner.style.visibility = bannerVisible ? "visible" : "hidden";
   turnoff.html(bannerVisible ? "TURN OFF BANNER" : "TURN ON BANNER");
 }
 
-function showUI(modeToSet) {
-  if (!pauseplay || !newsong || !upload || !turnoff || !loginBtn) return;
-  const banner = document.querySelector(".banner");
 
+
+
+function showUI(modeToSet) {
   if (modeToSet === "home") {
-    upload.show(); pauseplay.hide(); newsong.hide(); turnoff.hide(); loginBtn.show();
-    if (banner) banner.style.display = "none";
-  } else if (modeToSet === "upload") {
-    upload.hide(); pauseplay.show(); newsong.show(); turnoff.hide(); loginBtn.hide();
-    if (banner) banner.style.display = "none";
-  } else if (modeToSet === "spotify") {
-    upload.hide(); pauseplay.hide(); newsong.show(); turnoff.show(); loginBtn.hide();
-    if (banner) banner.style.display = "flex";
+    upload.show(); pauseplay.hide(); newsong.hide(); loginBtn.show(); turnoff.hide(); document.querySelector(".banner").style.display = "none";
+  } else if(modeToSet === "upload"){
+    upload.hide(); pauseplay.show(); newsong.show(); loginBtn.hide(); turnoff.hide(); document.querySelector(".banner").style.display = "none";
+  }
+  else if (modeToSet === "spotify"){
+    upload.hide(); pauseplay.hide(); newsong.show(); loginBtn.hide(); turnoff.show(); document.querySelector(".banner").style.display = "flex";
   }
 }
 
-// ====== PRELOAD & SETUP ======
+
 function preload() {
-  font = loadFont("SpaceMono-Regular.ttf",
-    () => console.log("Font loaded"),
-    () => console.warn("Font failed to load (check path)")
-  );
+  font = loadFont("SpaceMono-Regular.ttf");
 }
 
 function setup() {
-  const cnv = createCanvas(windowWidth, windowHeight);
+  let cnv = createCanvas(windowWidth, windowHeight);
   cnv.position(0, 0);
-  cnv.style('position', 'absolute');
-  cnv.style('z-index', '-1'); // keep canvas behind UI
-
+  cnv.style('z-index', '-1');        // Canvas behind HTML
+  cnv.style('position', 'absolute'); // Ensure it sits on the page properly
   fft = new p5.FFT();
   amplitude = new p5.Amplitude();
 
   for (let i = 0; i < numCircles; i++) {
-    circles.push(new Circle(random(width), random(height), random(100, 250)));
+    let x = random(width);
+    let y = random(height);
+    let r = random(100, 250);
+    circles.push(new Circle(x, y, r));
   }
 
-  // p5 buttons (attach to .top-controls)
-  pauseplay = createButton('▶︎').addClass('pauseplay').mousePressed(togglePlay).style('z-index','10');
-  turnoff = createButton('TURN OFF BANNER').addClass('turnoff').mousePressed(toggleBanner).style('z-index','10');
-  newsong = createButton('UPLOAD NEW SONG').addClass('newsong').mouseClicked(() => {
+  pauseplay = createButton('▶︎');
+  pauseplay.mousePressed(togglePlay);
+  pauseplay.addClass('pauseplay');
+
+    turnoff = createButton('TURN OFF BANNER');
+    turnoff.addClass('turnoff');
+    turnoff.mousePressed(toggleBanner);
+
+  newsong = createButton('UPLOAD NEW SONG');
+  newsong.mouseClicked(() => {
     if (song) song.stop();
-    spotifyToken = null; albumArtURL = null; albumImg = null; palette = [];
+    mode = "home";
     localStorage.removeItem('access_token');
-    setMode("home");
-  }).style('z-index','10');
+    localStorage.removeItem('use_spotify');
+    spotifyToken = null;
+    albumArtURL = null;
+    albumImg = null;
+    palette = [];
 
-  upload = createButton('+').addClass('upload').mousePressed(() => input.elt.click()).style('z-index','10');
-  input = createFileInput(handleSong); input.elt.accept = 'audio/*'; input.hide();
+    showUI("home");
+  });
+  newsong.addClass('newsong');
 
-  const controlWrapper = select('.top-controls');
-  controlWrapper.child(turnoff); controlWrapper.child(newsong); controlWrapper.child(pauseplay);
+  upload = createButton('+');
+  upload.mouseClicked(() => input.elt.click());
+  upload.addClass('upload');
 
-  // center ui
-  centerUploadButton();
+  input = createFileInput(handleSong);
+  input.elt.accept = 'audio/*';
+  input.hide();
 
-  // loginBtn is the plain HTML spotify button
-  loginBtn = select('#login');
-  centerSpotifyButton();
-
-  // attach fallback click handler (should already be attached by index inline script)
-  if (loginBtn && !loginBtn.elt.onclick) {
-    loginBtn.elt.onclick = () => console.warn("spotify login clicked (fallback)");
-  }
-
-  // handle return from Spotify (code param)
-  const urlParams = new URLSearchParams(window.location.search);
-  const code = urlParams.get('code');
-  if (code) exchangeCodeForToken(code);
-
-  // if token already stored, try to use it
-  if (localStorage.getItem('use_spotify') === 'true' && localStorage.getItem('access_token')) {
-    spotifyToken = localStorage.getItem('access_token');
-    setMode("spotify");
+  if (localStorage.getItem('use_spotify') === 'true' && spotifyToken) {
+    localStorage.removeItem('use_spotify');
+    mode = "spotify";
     fetchAlbumArt();
   }
+  loginBtn = select('#login');
+
+  setTimeout(() => {
+  centerUploadButton();
+  centerSpotifyButton(); // center Spotify after DOM is ready
+}, 0);
+
+const controlWrapper = select('.top-controls');
+controlWrapper.child(turnoff);
+controlWrapper.child(newsong);
+controlWrapper.child(pauseplay);
+
 
   setInterval(fetchAlbumArt, 5000);
-
-  // initial UI (mode defaults to "home")
-  showUI(mode);
 }
 
 // ====== DRAW ======
 function draw() {
-  background(0, 0, 50);
+  background(200, 200, 255);
+  drawingContext.shadowBlur = 0;
+  drawingContext.shadowColor = 'rgba(0,0,0,0)';
 
+  let level = amplitude.getLevel();
   fft.analyze();
-  const level = amplitude.getLevel();
-  const bass = fft.getEnergy('bass');
-  const mid = fft.getEnergy('mid');
-  const treble = fft.getEnergy('treble');
-  const pitch = bass > mid && bass > treble ? "Bass" : mid > treble ? "Mid" : "Treble";
+  let bass = fft.getEnergy('bass');
+  let mid = fft.getEnergy('mid');
+  let treble = fft.getEnergy('treble');
+
+  let pitch = bass > mid && bass > treble ? "Bass" : mid > treble ? "Mid" : "Treble";
 
   if (frameCount % 60 === 10) {
-    circles.forEach(c => {
-      if (mode === "upload" && song?.isPlaying()) c.setColorBasedOnAmplitude(level, pitch);
-      else if (mode === "spotify" && palette.length > 0) c.targetColor = random(palette);
-      else c.targetColor = color(random(255), random(255), random(255));
-    });
+    for (let c of circles) {
+      if (mode === "upload" && song?.isPlaying()) {
+        c.setColorBasedOnAmplitude(level, pitch);
+      } else if (mode === "spotify" && palette.length > 0) {
+        c.targetColor = random(palette);
+      } else {
+        c.targetColor = color(random(255), random(255), random(255));
+      }
+    }
   }
 
-  circles.forEach(c => {
-    c.updateColor();
-    fill(c.color);
-    noStroke();
+  for (let c of circles) {
+    c.updateColor(); fill(c.color); noStroke();
     ellipse(c.x, c.y, c.radius * 2);
-  });
-
-  // Visualizer center
-  if (mode === "upload" && song?.isPlaying()) {
-    targetBassSize = lerp(targetBassSize, map(bass, 0, 300, 50, 250), 1);
-  } else if (mode === "spotify") {
-    targetBassSize = map(sin(frameCount * 0.02), -1, 1, 100, 200);
-  } else {
-    targetBassSize = max(targetBassSize - 50, 30);
   }
 
-  bassSize = lerp(bassSize, targetBassSize, 0.8);
-  let outer = map(bassSize, 0, 400, 0, 20);
+  filter(BLUR, 100);
 
-  drawingContext.shadowBlur = 32;
-  drawingContext.shadowColor = color(255);
-  fill(255); noStroke();
-  ellipse(width / 2, height / 2, bassSize);
-
-  push();
-  translate(width / 2, height / 2);
-  rotate(frameCount * 0.01);
-  for (let i = 0; i < 16; i++) {
-    let angle = (TWO_PI / 16) * i;
-    ellipse(bassSize * cos(angle), bassSize * sin(angle), outer);
-  }
-  pop();
-
-  // home text
   if (mode === "home") {
     textFont(font);
     textAlign(CENTER, CENTER);
@@ -335,25 +279,55 @@ function draw() {
     text('upload audio file here', width / 2, height / 1.6);
     textSize(20);
     text('↑', width / 2, height / 1.7);
+  } else {
+    // Visualizer effect
+    if (mode === "upload" && song?.isPlaying()) {
+      targetBassSize = lerp(targetBassSize, map(bass, 0, 300, 50, 250), 1);
+    } else if (mode === "spotify") {
+      targetBassSize = map(sin(frameCount * 0.02), -1, 1, 100, 200);
+    } else {
+      targetBassSize = max(targetBassSize - 50, 30);
+    }
+
+    bassSize = lerp(bassSize, targetBassSize, 0.8);
+    let outer = map(bassSize, 0, 400, 0, 20);
+
+    drawingContext.shadowBlur = 32;
+    drawingContext.shadowColor = color(255);
+    fill(255); noStroke();
+    ellipse(width / 2, height / 2, bassSize);
+
+    translate(width / 2, height / 2);
+    rotate(frameCount * 0.01);
+    for (let i = 0; i < 16; i++) {
+      let angle = (TWO_PI / 16) * i;
+      let x = bassSize * cos(angle);
+      let y = bassSize * sin(angle);
+      ellipse(x, y, outer);
+    }
+  }
+
+  showUI(mode);
+}
+
+function togglePlay() {
+  if (song.isPlaying()) {
+    song.pause(); play();
+  } else {
+    song.play(); pause();
   }
 }
 
-// ====== PLAYBACK / UI ======
-function togglePlay() {
-  if (song?.isPlaying()) {
-    song.pause();
-    showPlayIcon();
-  } else {
-    song?.play();
-    showPauseIcon();
-  }
+function play() {
+  pauseplay.html('▶︎');
 }
-function showPlayIcon() { if (pauseplay) pauseplay.html('▶︎'); }
-function showPauseIcon() { if (pauseplay) pauseplay.html('❚❚'); }
+
+function pause() {
+  pauseplay.html('❚❚');
+}
 
 function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
   centerUploadButton();
   centerSpotifyButton();
 }
-
