@@ -9,7 +9,7 @@ let font;
 let mode = "home"; // 'home', 'upload', 'spotify'
 
 // ====== SPOTIFY STATE ======
-let spotifyToken = localStorage.getItem('access_token');
+let spotifyToken = localStorage.getItem('access_token') || null;
 let albumArtURL = null;
 let albumImg = null;
 let palette = [];
@@ -39,17 +39,16 @@ class Circle {
   }
 }
 
-// ====== UTIL: set mode safely (only call showUI when mode changes) ======
+// ====== SAFE UI MODE SWITCH ======
 function setMode(newMode) {
   if (mode === newMode) return;
   mode = newMode;
   showUI(mode);
 }
 
-// ====== FILE & SPOTIFY HELPERS ======
+// ====== AUDIO & SPOTIFY HELPERS ======
 function handleSong(file) {
   if (file.type === 'audio') {
-    // loadSound is async; set amplitude input once loaded and play
     song = loadSound(file.data, () => {
       amplitude.setInput(song);
       song.play();
@@ -63,7 +62,7 @@ async function exchangeCodeForToken(code) {
   try {
     const codeVerifier = localStorage.getItem('code_verifier');
     if (!codeVerifier) {
-      console.warn("No PKCE code_verifier in localStorage.");
+      console.warn("No code_verifier found in localStorage.");
       return;
     }
 
@@ -92,10 +91,8 @@ async function exchangeCodeForToken(code) {
       localStorage.setItem('access_token', data.access_token);
       spotifyToken = data.access_token;
       localStorage.setItem('use_spotify', 'true');
-      // Now fetch album art & switch mode
       fetchAlbumArt();
       setMode("spotify");
-      // remove code from URL
       history.replaceState(null, null, window.location.origin + window.location.pathname);
     } else {
       console.warn("No access_token received:", data);
@@ -111,12 +108,7 @@ async function fetchAlbumArt() {
     const res = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
       headers: { 'Authorization': 'Bearer ' + spotifyToken }
     });
-
-    if (!res.ok) {
-      // not playing or token expired — stop
-      // console.log('Spotify player returned', res.status);
-      return;
-    }
+    if (!res.ok) return;
 
     const data = await res.json();
     albumArtURL = data?.item?.album?.images?.[0]?.url || null;
@@ -173,7 +165,6 @@ function extractColors(img) {
 // ====== UI HELPERS ======
 function centerUploadButton() {
   if (!upload) return;
-  // use DOM sizes to be robust
   const w = upload.elt.offsetWidth;
   const h = upload.elt.offsetHeight;
   upload.position(width / 2 - w / 2, height / 2 - h / 2);
@@ -187,7 +178,7 @@ function centerSpotifyButton() {
   const h = loginBtn.elt.offsetHeight;
   loginBtn.elt.style.left = `${window.innerWidth / 2 - w / 2}px`;
   loginBtn.elt.style.top = `${window.innerHeight / 1.4 - h / 2}px`;
-  loginBtn.elt.style.zIndex = 10;
+  loginBtn.elt.style.zIndex = 20;
 }
 
 function toggleBanner() {
@@ -216,7 +207,6 @@ function showUI(modeToSet) {
 
 // ====== PRELOAD & SETUP ======
 function preload() {
-  // if font fails to load, p5 will still fallback; logging helpful
   font = loadFont("SpaceMono-Regular.ttf",
     () => console.log("Font loaded"),
     () => console.warn("Font failed to load (check path)")
@@ -224,7 +214,6 @@ function preload() {
 }
 
 function setup() {
-  // create canvas behind UI (CSS ensures .top-controls and .banner are above)
   const cnv = createCanvas(windowWidth, windowHeight);
   cnv.position(0, 0);
   cnv.style('position', 'absolute');
@@ -233,12 +222,11 @@ function setup() {
   fft = new p5.FFT();
   amplitude = new p5.Amplitude();
 
-  // Circles
   for (let i = 0; i < numCircles; i++) {
     circles.push(new Circle(random(width), random(height), random(100, 250)));
   }
 
-  // Buttons
+  // p5 buttons (attach to .top-controls)
   pauseplay = createButton('▶︎').addClass('pauseplay').mousePressed(togglePlay).style('z-index','10');
   turnoff = createButton('TURN OFF BANNER').addClass('turnoff').mousePressed(toggleBanner).style('z-index','10');
   newsong = createButton('UPLOAD NEW SONG').addClass('newsong').mouseClicked(() => {
@@ -251,26 +239,27 @@ function setup() {
   upload = createButton('+').addClass('upload').mousePressed(() => input.elt.click()).style('z-index','10');
   input = createFileInput(handleSong); input.elt.accept = 'audio/*'; input.hide();
 
-  // attach p5 buttons to top-controls wrapper so CSS z-index applies
   const controlWrapper = select('.top-controls');
   controlWrapper.child(turnoff); controlWrapper.child(newsong); controlWrapper.child(pauseplay);
 
-  // center upload and spotify buttons
+  // center ui
   centerUploadButton();
 
+  // loginBtn is the plain HTML spotify button
   loginBtn = select('#login');
-  // also attach a click handler in case inline script didn't (safe)
-  if (loginBtn && !loginBtn.elt.onclick) {
-    loginBtn.elt.onclick = () => { console.warn("login handler from sketch"); };
-  }
   centerSpotifyButton();
 
-  // if we returned from Spotify with ?code=..., handle it here (now that fetchAlbumArt exists)
+  // attach fallback click handler (should already be attached by index inline script)
+  if (loginBtn && !loginBtn.elt.onclick) {
+    loginBtn.elt.onclick = () => console.warn("spotify login clicked (fallback)");
+  }
+
+  // handle return from Spotify (code param)
   const urlParams = new URLSearchParams(window.location.search);
   const code = urlParams.get('code');
   if (code) exchangeCodeForToken(code);
 
-  // if we have spotify token stored, try to fetch album art
+  // if token already stored, try to use it
   if (localStorage.getItem('use_spotify') === 'true' && localStorage.getItem('access_token')) {
     spotifyToken = localStorage.getItem('access_token');
     setMode("spotify");
@@ -279,7 +268,7 @@ function setup() {
 
   setInterval(fetchAlbumArt, 5000);
 
-  // initial UI
+  // initial UI (mode defaults to "home")
   showUI(mode);
 }
 
@@ -287,7 +276,6 @@ function setup() {
 function draw() {
   background(0, 0, 50);
 
-  // analyze once per draw
   fft.analyze();
   const level = amplitude.getLevel();
   const bass = fft.getEnergy('bass');
@@ -295,7 +283,6 @@ function draw() {
   const treble = fft.getEnergy('treble');
   const pitch = bass > mid && bass > treble ? "Bass" : mid > treble ? "Mid" : "Treble";
 
-  // update target colors periodically (every 60 frames)
   if (frameCount % 60 === 10) {
     circles.forEach(c => {
       if (mode === "upload" && song?.isPlaying()) c.setColorBasedOnAmplitude(level, pitch);
@@ -304,7 +291,6 @@ function draw() {
     });
   }
 
-  // draw circles
   circles.forEach(c => {
     c.updateColor();
     fill(c.color);
@@ -312,7 +298,7 @@ function draw() {
     ellipse(c.x, c.y, c.radius * 2);
   });
 
-  // Visualizer
+  // Visualizer center
   if (mode === "upload" && song?.isPlaying()) {
     targetBassSize = lerp(targetBassSize, map(bass, 0, 300, 50, 250), 1);
   } else if (mode === "spotify") {
@@ -354,13 +340,20 @@ function draw() {
 
 // ====== PLAYBACK / UI ======
 function togglePlay() {
-  if (song?.isPlaying()) { song.pause(); play(); } else { song?.play(); pause(); }
+  if (song?.isPlaying()) {
+    song.pause();
+    showPlayIcon();
+  } else {
+    song?.play();
+    showPauseIcon();
+  }
 }
-function play() { pauseplay.html('▶︎'); }
-function pause() { pauseplay.html('❚❚'); }
+function showPlayIcon() { if (pauseplay) pauseplay.html('▶︎'); }
+function showPauseIcon() { if (pauseplay) pauseplay.html('❚❚'); }
 
 function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
   centerUploadButton();
   centerSpotifyButton();
 }
+
