@@ -3,88 +3,107 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
     <title>Sketch</title>
 
     <link rel="stylesheet" type="text/css" href="style.css">
 
-    <!-- p5 libraries (kept as local files like you had) -->
-    <script src="./p5.min.js"></script>
-    <script src="./p5.sound.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.7.0/p5.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.7.0/addons/p5.sound.min.js"></script>
+
   </head>
 
   <body>
-    <!-- Top controls wrapper for p5 buttons -->
-    <div id="top-right-controls" class="top-controls"></div>
-
-    <!-- Banner -->
-    <div class="banner">
-      <div class="scrolling-track" id="scrolling-track"></div>
-    </div>
-
-    <!-- Spotify button (simple HTML button; sketch.js will position it) -->
-    <button id="login">
-      <img src="./Spotify_Primary_Logo_RGB_White.png" class="btn-icon" alt="spotify">
-      CONNECT TO SPOTIFY
-    </button>
-
-    <!-- Inline: PKCE generation + redirect only (no global collisions) -->
+     <div id="top-right-controls" class="top-controls"></div>
+  <div class="banner">
+    <div class="scrolling-track" id="scrolling-track"></div>
+  </div>
+    <button id = "login"><img src="./Spotify_Primary_Logo_RGB_White.png" class="btn-icon">CONNECT TO SPOTIFY</button> 
     <script>
-      (function () {
-        const clientId = '836ade30328e4480b154fb66700d6f00';
-        const redirectUri = 'https://mayamunikoti.github.io/Synesthetic/';
-        const authUrlBase = "https://accounts.spotify.com/authorize";
+      const clientId = '836ade30328e4480b154fb66700d6f00';
+      const redirectUri = 'https://mayamunikoti.github.io/Synesthetic/';
+      const authUrl = new URL("https://accounts.spotify.com/authorize");
 
-        const generateRandomString = (length) => {
-          const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-          const values = crypto.getRandomValues(new Uint8Array(length));
-          return values.reduce((acc, x) => acc + possible[x % possible.length], "");
+      const generateRandomString = (length) => {
+        const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+        const values = crypto.getRandomValues(new Uint8Array(length));
+        return values.reduce((acc, x) => acc + possible[x % possible.length], "");
+      }
+
+      const sha256 = async (plain) => {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(plain);
+        return window.crypto.subtle.digest('SHA-256', data);
+      }
+
+      const base64encode = (input) => {
+        return btoa(String.fromCharCode(...new Uint8Array(input)))
+          .replace(/=/g, '')
+          .replace(/\+/g, '-')
+          .replace(/\//g, '_');
+      }
+
+      const codeVerifier = generateRandomString(64);
+
+      async function loginWithSpotify() {
+        const hashed = await sha256(codeVerifier);
+        const codeChallenge = base64encode(hashed);
+
+        window.localStorage.setItem('code_verifier', codeVerifier);
+
+        const params = {
+          response_type: 'code',
+          client_id: clientId,
+          scope: 'user-read-currently-playing user-read-playback-state',
+          code_challenge_method: 'S256',
+          code_challenge: codeChallenge,
+          redirect_uri: redirectUri,
         };
 
-        const sha256 = async (plain) => {
-          const encoder = new TextEncoder();
-          const data = encoder.encode(plain);
-          return window.crypto.subtle.digest('SHA-256', data);
-        };
+        authUrl.search = new URLSearchParams(params).toString();
+        window.location.href = authUrl.toString();
+      }
 
-        const base64encode = (input) => {
-          return btoa(String.fromCharCode(...new Uint8Array(input)))
-            .replace(/=/g, '')
-            .replace(/\+/g, '-')
-            .replace(/\//g, '_');
-        };
+      document.getElementById('login').onclick = loginWithSpotify;
 
-        // Only create verifier when user clicks; keep small memory footprint
-        async function loginWithSpotify() {
-          try {
-            const codeVerifier = generateRandomString(64);
-            const hashed = await sha256(codeVerifier);
-            const codeChallenge = base64encode(hashed);
+      const urlParams = new URLSearchParams(window.location.search);
+      const code = urlParams.get('code');
 
-            window.localStorage.setItem('code_verifier', codeVerifier);
+      async function getToken(code) {
+        const codeVerifier = localStorage.getItem('code_verifier');
 
-            const params = {
-              response_type: 'code',
-              client_id: clientId,
-              scope: 'user-read-currently-playing user-read-playback-state',
-              code_challenge_method: 'S256',
-              code_challenge: codeChallenge,
-              redirect_uri: redirectUri
-            };
-
-            const authUrl = authUrlBase + "?" + new URLSearchParams(params).toString();
-            window.location.href = authUrl;
-          } catch (err) {
-            console.error("PKCE generation failed:", err);
-          }
+        const url = "https://accounts.spotify.com/api/token";
+        const payload = {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: new URLSearchParams({
+            client_id: clientId,
+            grant_type: 'authorization_code',
+            code,
+            redirect_uri: redirectUri,
+            code_verifier: codeVerifier,
+          }),
         }
 
-        // attach handler
-        const btn = document.getElementById('login');
-        if (btn) btn.addEventListener('click', loginWithSpotify);
-      })();
-    </script>
+        const body = await fetch(url, payload);
+        const response = await body.json();
 
-    <!-- main sketch (loads after inline script) -->
+        localStorage.setItem('access_token', response.access_token);
+        console.log("Access Token:", response.access_token);
+
+
+      }
+
+      if (code) {
+        getToken(code).then(() => {
+        localStorage.setItem('use_spotify', 'true');
+        window.location.href = redirectUri; // reload without code param
+      });
+      }
+
+    </script>
     <script src="./sketch.js"></script>
   </body>
 </html>
