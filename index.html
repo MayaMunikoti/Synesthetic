@@ -3,15 +3,12 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
     <title>Sketch</title>
-
     <link rel="stylesheet" type="text/css" href="style.css">
 
     <!-- p5.js libraries in root -->
     <script src="./p5.min.js"></script>
     <script src="./p5.sound.min.js"></script>
-
   </head>
 
   <body>
@@ -25,11 +22,14 @@
 
     <!-- Spotify button -->
     <button id="login">
-      <img src="./Spotify_Primary_Logo_RGB_White.png" class="btn-icon">
+      <img src="./Spotify_Primary_Logo_RGB_White.png" class="btn-icon" alt="spotify">
       CONNECT TO SPOTIFY
-    </button> 
+    </button>
 
-    <!-- Spotify auth script -->
+    <!--
+      Inline script: only PKCE generation + redirect handler.
+      IMPORTANT: do NOT declare global variables here that clash with sketch.js.
+    -->
     <script>
       const clientId = '836ade30328e4480b154fb66700d6f00';
       const redirectUri = 'https://mayamunikoti.github.io/Synesthetic/';
@@ -39,27 +39,29 @@
         const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
         const values = crypto.getRandomValues(new Uint8Array(length));
         return values.reduce((acc, x) => acc + possible[x % possible.length], "");
-      }
+      };
 
       const sha256 = async (plain) => {
         const encoder = new TextEncoder();
         const data = encoder.encode(plain);
         return window.crypto.subtle.digest('SHA-256', data);
-      }
+      };
 
       const base64encode = (input) => {
         return btoa(String.fromCharCode(...new Uint8Array(input)))
           .replace(/=/g, '')
           .replace(/\+/g, '-')
           .replace(/\//g, '_');
-      }
+      };
 
+      // generate code_verifier for PKCE and store it before redirect
       const codeVerifier = generateRandomString(64);
 
       async function loginWithSpotify() {
         const hashed = await sha256(codeVerifier);
         const codeChallenge = base64encode(hashed);
 
+        // store code verifier for later token exchange
         window.localStorage.setItem('code_verifier', codeVerifier);
 
         const params = {
@@ -75,51 +77,11 @@
         window.location.href = authUrl.toString();
       }
 
-      const loginBtn = document.getElementById('login');
-      loginBtn.onclick = loginWithSpotify;
-
-      const urlParams = new URLSearchParams(window.location.search);
-      const code = urlParams.get('code');
-
-      async function getToken(code) {
-        const codeVerifier = localStorage.getItem('code_verifier');
-
-        const url = "https://accounts.spotify.com/api/token";
-        const payload = {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-          body: new URLSearchParams({
-            client_id: clientId,
-            grant_type: 'authorization_code',
-            code,
-            redirect_uri: redirectUri,
-            code_verifier: codeVerifier,
-          }),
-        }
-
-        const body = await fetch(url, payload);
-        const response = await body.json();
-
-        localStorage.setItem('access_token', response.access_token);
-        console.log("Access Token:", response.access_token);
-      }
-
-     if (code) {
-      getToken(code).then(() => {
-        localStorage.setItem('use_spotify', 'true');
-        spotifyToken = localStorage.getItem('access_token'); // update global token
-        mode = "spotify";                                  // switch to Spotify view
-        fetchAlbumArt();                                   // populate album art & UI
-        history.replaceState(null, null, redirectUri);    // remove ?code= from URL without reload
-      });
-    }
-
+      // attach click handler but DON'T declare loginBtn as a global const
+      document.getElementById('login').onclick = loginWithSpotify;
     </script>
 
-    <!-- Your sketch -->
+    <!-- sketch (loads after the inline script above) -->
     <script src="./sketch.js"></script>
   </body>
 </html>
-
