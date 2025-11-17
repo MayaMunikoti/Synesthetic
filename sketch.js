@@ -2,9 +2,8 @@
 let song, amplitude, fft;
 let bassSize = 100, targetBassSize = 100;
 let numCircles = 200, circles = [];
-let pauseplay, newsong, upload, input, turnoff;
+let pauseplay, newsong, upload, input, turnoff, loginBtn;
 let font;
-let loginBtn;
 
 // ====== MODES ======
 let mode = "home"; // 'home', 'upload', 'spotify'
@@ -16,7 +15,7 @@ let albumImg;
 let palette = [];
 let bannerVisible = true;
 
-// ====== CLASSES ======
+// ====== CIRCLE CLASS ======
 class Circle {
   constructor(x, y, r) {
     this.x = x;
@@ -44,10 +43,9 @@ class Circle {
 function handleSong(file) {
   if (file.type === 'audio') {
     song = loadSound(file.data, () => {
-      mode = "upload";
+      setMode("upload");
       amplitude.setInput(song);
-      song.onended(play);
-      showUI(mode);
+      song.onended(() => togglePlay());
     });
   }
 }
@@ -64,12 +62,11 @@ async function fetchAlbumArt() {
     albumArtURL = data?.item?.album?.images?.[0]?.url;
 
     if (albumArtURL) {
-      mode = "spotify";
       loadImage(albumArtURL, img => {
         albumImg = img;
         palette = extractColors(img);
       });
-      showUI(mode);
+      setMode("spotify");
     }
 
     if (data?.item?.name && data?.item?.artists?.[0]?.name) {
@@ -83,8 +80,8 @@ async function fetchAlbumArt() {
 function updateNowPlaying(text) {
   const track = document.getElementById("scrolling-track");
   if (!track) return;
-  track.innerHTML = '';
 
+  track.innerHTML = '';
   const temp = document.createElement('div');
   temp.className = 'scrolling-text';
   temp.innerText = `NOW PLAYING: ${text}`;
@@ -109,9 +106,9 @@ function extractColors(img) {
   img.loadPixels();
   const colors = [];
   for (let i = 0; i < 500; i++) {
-    let x = floor(random(img.width));
-    let y = floor(random(img.height));
-    let idx = 4 * (y * img.width + x);
+    const x = floor(random(img.width));
+    const y = floor(random(img.height));
+    const idx = 4 * (y * img.width + x);
     colors.push(color(img.pixels[idx], img.pixels[idx+1], img.pixels[idx+2]));
   }
   return colors;
@@ -155,6 +152,11 @@ function showUI(modeToSet) {
   }
 }
 
+function setMode(newMode) {
+  mode = newMode;
+  showUI(mode);
+}
+
 // ====== PRELOAD & SETUP ======
 function preload() {
   font = loadFont("SpaceMono-Regular.ttf");
@@ -172,17 +174,16 @@ function setup() {
   }
 
   // ===== Buttons =====
-  pauseplay = createButton('▶︎').addClass('pauseplay').mousePressed(togglePlay);
-  turnoff = createButton('TURN OFF BANNER').addClass('turnoff').mousePressed(toggleBanner);
+  pauseplay = createButton('▶︎').addClass('pauseplay').mousePressed(togglePlay).style('z-index','10');
+  turnoff = createButton('TURN OFF BANNER').addClass('turnoff').mousePressed(toggleBanner).style('z-index','10');
   newsong = createButton('UPLOAD NEW SONG').addClass('newsong').mouseClicked(() => {
     if (song) song.stop();
-    mode = "home";
     spotifyToken = null; albumArtURL = null; albumImg = null; palette = [];
     localStorage.removeItem('access_token');
-    showUI("home");
-  });
+    setMode("home");
+  }).style('z-index','10');
 
-  upload = createButton('+').addClass('upload').mousePressed(() => input.elt.click());
+  upload = createButton('+').addClass('upload').mousePressed(() => input.elt.click()).style('z-index','10');
   input = createFileInput(handleSong); input.elt.accept = 'audio/*'; input.hide();
 
   const controlWrapper = select('.top-controls');
@@ -196,7 +197,7 @@ function setup() {
   // Spotify check
   if (localStorage.getItem('use_spotify') === 'true' && spotifyToken) {
     localStorage.removeItem('use_spotify');
-    mode = "spotify";
+    setMode("spotify");
     fetchAlbumArt();
   }
   setInterval(fetchAlbumArt, 5000);
@@ -237,22 +238,22 @@ function draw() {
   fill(255); noStroke();
   ellipse(width/2, height/2, bassSize);
 
+  push();
   translate(width/2, height/2);
   rotate(frameCount*0.01);
   for(let i=0;i<16;i++){
     let angle = (TWO_PI/16)*i;
     ellipse(bassSize*cos(angle), bassSize*sin(angle), outer);
   }
+  pop();
 
+  // Home text
   if(mode === "home"){
     textFont(font); textAlign(CENTER, CENTER); fill('yellow');
     textSize(70); text('synesthetic_', width/2, height/2.9);
     textSize(18); text('upload audio file here', width/2, height/1.6);
     textSize(20); text('↑', width/2, height/1.7);
   }
-
-  // Only update UI once per frame
-  showUI(mode);
 }
 
 function togglePlay() {
@@ -266,4 +267,3 @@ function windowResized(){
   centerUploadButton();
   centerSpotifyButton();
 }
-
